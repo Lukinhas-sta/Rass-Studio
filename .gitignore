@@ -1,0 +1,13 @@
+.env
+.env.*
+*.pem
+*.p12
+*.pfx
+*.key
+*.zip
+*.sql
+supabase/
+backups/
+backup/
+.DS_Store
+Thumbs.db
