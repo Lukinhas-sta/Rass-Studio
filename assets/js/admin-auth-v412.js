@@ -2,10 +2,12 @@
   'use strict';
 
   const cfg = window.RASS_SUPABASE_CONFIG || {};
+  const ACTIVITY_KEY = 'rass-studio-last-activity-v1';
   let installed = false;
   let pendingFactorId = '';
 
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const touchActivity = () => { try { localStorage.setItem(ACTIVITY_KEY, String(Date.now())); } catch {} };
 
   function setupBox() {
     const form = document.getElementById('mfaLoginForm');
@@ -124,6 +126,71 @@
     showSetup(data);
   }
 
+  function minutes(value) {
+    const [h, m] = String(value || '').slice(0, 5).split(':').map(Number);
+    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : NaN;
+  }
+
+  function intervalsOverlap(aStart, aDuration, bStart, bDuration) {
+    return aStart < bStart + bDuration && bStart < aStart + aDuration;
+  }
+
+  function patchAppointmentGuard() {
+    const form = document.getElementById('appointmentForm');
+    const data = window.RassData;
+    if (!form || !data || form.dataset.v412Guard === '1') return;
+    form.dataset.v412Guard = '1';
+
+    form.addEventListener('submit', event => {
+      const id = String(document.getElementById('appointmentId')?.value || '');
+      const date = String(document.getElementById('appDate')?.value || '');
+      const time = String(document.getElementById('appTime')?.value || '').slice(0, 5);
+      const staffId = String(document.getElementById('appStaff')?.value || '');
+      const serviceId = String(document.getElementById('appService')?.value || '');
+      if (!date || !time || !staffId || !serviceId) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        alert('Preencha serviço, profissional, data e horário antes de salvar.');
+        return;
+      }
+
+      const services = data.get('services') || [];
+      const service = services.find(s => s.id === serviceId);
+      const duration = Math.max(5, Number(service?.duration || 60));
+      const start = minutes(time);
+      if (!Number.isFinite(start)) return;
+
+      const active = status => !['Cancelado', 'Recusado'].includes(String(status || ''));
+      const appointments = data.get('appointments') || [];
+      const conflict = appointments.some(item => {
+        if (String(item.id) === id || item.date !== date || String(item.staffId || '') !== staffId || !active(item.status)) return false;
+        const otherStart = minutes(item.time);
+        if (!Number.isFinite(otherStart)) return false;
+        const otherService = services.find(s => s.id === item.serviceId);
+        const otherDuration = Math.max(5, Number(otherService?.duration || 60));
+        return intervalsOverlap(start, duration, otherStart, otherDuration);
+      });
+
+      const settings = data.get('settings') || {};
+      const blockDuration = Math.max(5, Number(settings.interval || 60));
+      const blocked = (data.get('blocked') || []).some(block => {
+        if (block.date !== date) return false;
+        if (block.staffId && String(block.staffId) !== staffId) return false;
+        if (block.allDay) return true;
+        const blockStart = minutes(block.time);
+        return Number.isFinite(blockStart) && intervalsOverlap(start, duration, blockStart, blockDuration);
+      });
+
+      if (conflict || blocked) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        alert(conflict
+          ? 'Esse período já encosta em outro atendimento dessa profissional. Escolha outro horário.'
+          : 'Esse período está bloqueado na agenda. Escolha outro horário ou remova o bloqueio primeiro.');
+      }
+    }, true);
+  }
+
   async function install() {
     if (installed || !document.body?.classList.contains('admin-body')) return;
     const remote = window.RassRemote;
@@ -134,7 +201,7 @@
     }
 
     installed = true;
-    window.RASS_ADMIN_AUTH_VERSION = '4.12.0';
+    window.RASS_ADMIN_AUTH_VERSION = '4.12.1';
 
     // Captura a implementação endurecida existente. Depois da verificação AAL2,
     // ela continua responsável por hidratar e liberar o painel.
@@ -151,6 +218,7 @@
       const normalized = String(email || '').trim().toLowerCase();
       const { error } = await c.auth.signInWithPassword({ email: normalized, password });
       if (error) throw new Error('E-mail ou senha inválidos.');
+      touchActivity();
       if (!await hasMembership(c)) {
         await c.auth.signOut();
         throw new Error('Esta conta não está autorizada como administradora da Rass Studio.');
@@ -180,6 +248,7 @@
       pendingFactorId = '';
       hideSetup();
       if (state.aal?.currentLevel !== 'aal2') return { mfaRequired: true, enrollmentRequired: false };
+      touchActivity();
       return finishAdmin();
     };
 
@@ -205,11 +274,17 @@
 
       pendingFactorId = '';
       hideSetup();
+      touchActivity();
       await c.auth.refreshSession().catch(() => null);
+      touchActivity();
       const result = await finishAdmin();
       if (!result?.ok) throw new Error('2FA confirmado, mas não foi possível carregar o painel. Atualize a página.');
       return true;
     };
+
+    // O admin.js configura os formulários no DOMContentLoaded. Rodamos logo depois
+    // para impedir conflitos de duração/bloqueios antes que a gravação seja tentada.
+    setTimeout(patchAppointmentGuard, 0);
   }
 
   if (document.readyState === 'loading') {
