@@ -1,0 +1,64 @@
+name: Rass checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '17 7 * * 1'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repository rules
+        run: |
+          set -euo pipefail
+          bad=$(find . -type f \( -name '.env' -o -name '.env.*' -o -name '*.pem' -o -name '*.p12' -o -name '*.pfx' -o -name '*.key' -o -name '*.sql' -o -name '*.zip' \) -not -path './.git/*' -print)
+          test -z "$bad" || { echo "$bad"; exit 1; }
+          ! grep -RIn --exclude-dir=.git --exclude='security.yml' --exclude='SECURITY.md' 'sb_secret_' .
+          ! grep -RIn --exclude-dir=.git --exclude='security.yml' --exclude='SECURITY.md' 'BEGIN PRIVATE KEY' .
+          ! grep -RIn --exclude-dir=.git --exclude='security.yml' '@latest' .
+          test -f .nojekyll
+          test -f CNAME
+          test -f assets/js/security.js
+          test -f assets/js/public-api.js
+          grep -q 'Content-Security-Policy' index.html
+          grep -q 'Content-Security-Policy' admin.html
+          grep -q 'upgrade-insecure-requests' index.html
+          grep -q 'upgrade-insecure-requests' admin.html
+      - name: JavaScript syntax
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' f; do node --check "$f"; done < <(find assets/js -type f -name '*.js' -print0)
+      - name: HTML references and transport
+        run: |
+          python3 - <<'PY'
+          import pathlib,re,sys
+          missing=[]; insecure=[]
+          allowed_http=('http://localhost','http://127.0.0.1','http://www.w3.org/2000/svg')
+          for f in pathlib.Path('.').rglob('*'):
+              if not f.is_file() or '.git' in f.parts or f.name in {'security.yml','SECURITY.md'}: continue
+              try: text=f.read_text(encoding='utf-8')
+              except UnicodeDecodeError: continue
+              for m in re.finditer(r'http://[^\s"\'>]+',text):
+                  if not m.group(0).startswith(allowed_http): insecure.append(f'{f}: {m.group(0)}')
+          for html in map(pathlib.Path,['index.html','admin.html']):
+              text=html.read_text(encoding='utf-8')
+              for _,url in re.findall(r'\b(src|href)=["\']([^"\']+)',text,re.I):
+                  if url.startswith(('#','http://','https://','mailto:','tel:','data:','blob:')): continue
+                  clean=url.split('?',1)[0].split('#',1)[0]
+                  if clean and not (html.parent/clean).exists(): missing.append(f'{html}: {clean}')
+          if insecure: print('HTTP inseguro:\n'+'\n'.join(insecure))
+          if missing: print('Arquivos ausentes:\n'+'\n'.join(missing))
+          if insecure or missing: sys.exit(1)
+          PY
+      - name: File size
+        run: |
+          set -euo pipefail
+          bad=$(find . -type f -not -path './.git/*' -size +5M -print)
+          test -z "$bad" || { echo "$bad"; exit 1; }
