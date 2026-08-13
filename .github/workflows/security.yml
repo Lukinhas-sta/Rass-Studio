@@ -22,15 +22,21 @@ jobs:
           test -z "$bad" || { echo "$bad"; exit 1; }
           ! grep -RIn --exclude-dir=.git --exclude='security.yml' --exclude='SECURITY.md' 'sb_secret_' .
           ! grep -RIn --exclude-dir=.git --exclude='security.yml' --exclude='SECURITY.md' 'BEGIN PRIVATE KEY' .
+          ! grep -RIn --exclude-dir=.git --exclude='security.yml' --exclude='SECURITY.md' 'SUPABASE_SERVICE_ROLE_KEY' .
+          ! grep -RIn --exclude-dir=.git --exclude='security.yml' --exclude='SECURITY.md' 'service_role' assets index.html admin.html
           ! grep -RIn --exclude-dir=.git --exclude='security.yml' '@latest' .
           test -f .nojekyll
           test -f CNAME
+          test -f robots.txt
+          test -f sitemap.xml
+          test -f SECURITY.md
           test -f assets/js/security.js
           test -f assets/js/public-api.js
           grep -q 'Content-Security-Policy' index.html
           grep -q 'Content-Security-Policy' admin.html
           grep -q 'upgrade-insecure-requests' index.html
           grep -q 'upgrade-insecure-requests' admin.html
+          grep -q 'RASS_HARDENING_VERSION' assets/js/security.js
       - name: JavaScript syntax
         run: |
           set -euo pipefail
@@ -38,9 +44,14 @@ jobs:
       - name: HTML references and transport
         run: |
           python3 - <<'PY'
-          import pathlib,re,sys
-          missing=[]; insecure=[]
-          allowed_http=('http://localhost','http://127.0.0.1','http://www.w3.org/2000/svg')
+          import pathlib,re,sys,xml.etree.ElementTree as ET
+          missing=[]; insecure=[]; duplicate_ids=[]
+          allowed_http=(
+              'http://localhost',
+              'http://127.0.0.1',
+              'http://www.w3.org/2000/svg',
+              'http://www.sitemaps.org/schemas/sitemap/0.9',
+          )
           for f in pathlib.Path('.').rglob('*'):
               if not f.is_file() or '.git' in f.parts or f.name in {'security.yml','SECURITY.md'}: continue
               try: text=f.read_text(encoding='utf-8')
@@ -53,9 +64,18 @@ jobs:
                   if url.startswith(('#','http://','https://','mailto:','tel:','data:','blob:')): continue
                   clean=url.split('?',1)[0].split('#',1)[0]
                   if clean and not (html.parent/clean).exists(): missing.append(f'{html}: {clean}')
+              ids=re.findall(r'\bid=["\']([^"\']+)',text,re.I)
+              seen=set()
+              for ident in ids:
+                  if ident in seen: duplicate_ids.append(f'{html}: {ident}')
+                  seen.add(ident)
+          try: ET.parse('sitemap.xml')
+          except Exception as e:
+              print('Sitemap inválido:',e); sys.exit(1)
           if insecure: print('HTTP inseguro:\n'+'\n'.join(insecure))
           if missing: print('Arquivos ausentes:\n'+'\n'.join(missing))
-          if insecure or missing: sys.exit(1)
+          if duplicate_ids: print('IDs HTML duplicados:\n'+'\n'.join(duplicate_ids))
+          if insecure or missing or duplicate_ids: sys.exit(1)
           PY
       - name: File size
         run: |
