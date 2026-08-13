@@ -117,6 +117,11 @@ if(R&&document.body.classList.contains('admin-body')&&!R.__mfaRequired){
   const d=document.getElementById('disableMfaBtn');if(d){d.disabled=true;d.textContent='2FA obrigatório'}
 }
 
+// V4.12: o fluxo robusto do ADM substitui o enrollment legado acima antes do login do usuário.
+if(document.body.classList.contains('admin-body')){
+  import('./admin-auth-v412.js?v=4.12').catch(e=>console.warn('[Rass V4.12] autenticação ADM',e?.message||e));
+}
+
 if(typeof window.initScroll==='function'){
   window.initScroll=function(){
     const p=document.getElementById('scrollProgress'),h=document.querySelector('.header'),top=document.getElementById('backTop'),links=[...document.querySelectorAll('#nav [data-section]')];
@@ -143,5 +148,5 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.querySelectorAll('.modal-close,.lightbox-close').forEach(b=>{if(!b.getAttribute('aria-label'))b.setAttribute('aria-label','Fechar')});
   document.querySelector('[data-gallery-prev]')?.setAttribute('aria-label','Foto anterior');document.querySelector('[data-gallery-next]')?.setAttribute('aria-label','Próxima foto');
 });
-window.RASS_HARDENING_VERSION='4.10.0';
+window.RASS_HARDENING_VERSION='4.12.0';
 })();
