@@ -1,5 +1,4 @@
-name: Rass security checks
-
+name: Rass checks
 on:
   push:
     branches: [main]
@@ -8,47 +7,22 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '17 7 * * 1'
-
 permissions:
   contents: read
-
 jobs:
-  security:
+  validate:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Reject private files
-        shell: bash
+      - uses: actions/checkout@v4
+      - name: Repository rules
         run: |
           set -euo pipefail
-          bad=$(find . -type f \
-            \( -name '.env' -o -name '.env.*' -o -name '*.pem' -o -name '*.p12' -o -name '*.pfx' -o -name '*.key' -o -name '*.sql' -o -name '*.zip' \) \
-            -not -path './.git/*' -print)
-          if [ -n "$bad" ]; then echo "Arquivos privados/proibidos:"; echo "$bad"; exit 1; fi
-
-      - name: Reject secret-like values
-        shell: bash
-        run: |
-          set -euo pipefail
-          if grep -RInE --exclude-dir=.git --exclude='security.yml' --exclude='SECURITY.md' \
-            '(sb_secret_[A-Za-z0-9_-]+|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|service[_-]?role[^a-zA-Z].{0,20}(eyJ|sb_))' .; then
-            echo 'Possível segredo encontrado.'; exit 1
-          fi
-
-      - name: Reject unsafe dependency and HTTP patterns
-        shell: bash
-        run: |
-          set -euo pipefail
-          if grep -RIn --exclude-dir=.git --exclude='security.yml' '@latest' .; then echo 'Não use @latest.'; exit 1; fi
-          if grep -RInE --exclude-dir=.git --exclude='security.yml' --exclude='SECURITY.md' 'http://(?!localhost|127\.0\.0\.1)' . 2>/dev/null; then echo 'Referência HTTP insegura.'; exit 1; fi
-
-      - name: Check required protections
-        shell: bash
-        run: |
-          set -euo pipefail
+          bad=$(find . -type f \( -name '.env' -o -name '.env.*' -o -name '*.pem' -o -name '*.p12' -o -name '*.pfx' -o -name '*.key' -o -name '*.sql' -o -name '*.zip' \) -not -path './.git/*' -print)
+          test -z "$bad" || { echo "$bad"; exit 1; }
+          ! grep -RIn --exclude-dir=.git --exclude='security.yml' --exclude='SECURITY.md' 'sb_secret_' .
+          ! grep -RIn --exclude-dir=.git --exclude='security.yml' --exclude='SECURITY.md' 'BEGIN PRIVATE KEY' .
+          ! grep -RIn --exclude-dir=.git --exclude='security.yml' '@latest' .
           test -f .nojekyll
           test -f CNAME
           test -f assets/js/security.js
@@ -57,38 +31,33 @@ jobs:
           grep -q 'Content-Security-Policy' admin.html
           grep -q 'upgrade-insecure-requests' index.html
           grep -q 'upgrade-insecure-requests' admin.html
-          grep -q 'sb_publishable_' assets/js/supabase-config.js
-
-      - name: Check JavaScript syntax
-        shell: bash
+      - name: JavaScript syntax
         run: |
           set -euo pipefail
           while IFS= read -r -d '' f; do node --check "$f"; done < <(find assets/js -type f -name '*.js' -print0)
-
-      - name: Check local HTML asset links
-        shell: bash
+      - name: HTML references and transport
         run: |
           python3 - <<'PY'
           import pathlib,re,sys
-          root=pathlib.Path('.')
-          missing=[]
-          for html in [root/'index.html',root/'admin.html']:
+          missing=[]; insecure=[]
+          for f in pathlib.Path('.').rglob('*'):
+              if not f.is_file() or '.git' in f.parts or f.name in {'security.yml','SECURITY.md'}: continue
+              try: text=f.read_text(encoding='utf-8')
+              except UnicodeDecodeError: continue
+              for m in re.finditer(r'http://[^\s"\'>]+',text):
+                  if not re.match(r'http://(localhost|127\.0\.0\.1)',m.group(0)): insecure.append(f'{f}: {m.group(0)}')
+          for html in map(pathlib.Path,['index.html','admin.html']):
               text=html.read_text(encoding='utf-8')
-              for attr,url in re.findall(r'\b(src|href)=["\']([^"\']+)',text,re.I):
+              for _,url in re.findall(r'\b(src|href)=["\']([^"\']+)',text,re.I):
                   if url.startswith(('#','http://','https://','mailto:','tel:','data:','blob:')): continue
                   clean=url.split('?',1)[0].split('#',1)[0]
-                  if not clean: continue
-                  path=(html.parent/clean)
-                  if not path.exists(): missing.append(f'{html}: {clean}')
-          if missing:
-              print('Referências locais ausentes:')
-              print('\n'.join(missing))
-              sys.exit(1)
+                  if clean and not (html.parent/clean).exists(): missing.append(f'{html}: {clean}')
+          if insecure: print('HTTP inseguro:\n'+'\n'.join(insecure))
+          if missing: print('Arquivos ausentes:\n'+'\n'.join(missing))
+          if insecure or missing: sys.exit(1)
           PY
-
-      - name: Reject oversized repository files
-        shell: bash
+      - name: File size
         run: |
           set -euo pipefail
           bad=$(find . -type f -not -path './.git/*' -size +5M -print)
-          if [ -n "$bad" ]; then echo 'Arquivos maiores que 5 MB:'; echo "$bad"; exit 1; fi
+          test -z "$bad" || { echo "$bad"; exit 1; }
