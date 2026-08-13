@@ -40,12 +40,13 @@ jobs:
           python3 - <<'PY'
           import pathlib,re,sys
           missing=[]; insecure=[]
+          allowed_http=('http://localhost','http://127.0.0.1','http://www.w3.org/2000/svg')
           for f in pathlib.Path('.').rglob('*'):
               if not f.is_file() or '.git' in f.parts or f.name in {'security.yml','SECURITY.md'}: continue
               try: text=f.read_text(encoding='utf-8')
               except UnicodeDecodeError: continue
               for m in re.finditer(r'http://[^\s"\'>]+',text):
-                  if not re.match(r'http://(localhost|127\.0\.0\.1)',m.group(0)): insecure.append(f'{f}: {m.group(0)}')
+                  if not m.group(0).startswith(allowed_http): insecure.append(f'{f}: {m.group(0)}')
           for html in map(pathlib.Path,['index.html','admin.html']):
               text=html.read_text(encoding='utf-8')
               for _,url in re.findall(r'\b(src|href)=["\']([^"\']+)',text,re.I):
