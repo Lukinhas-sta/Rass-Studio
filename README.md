@@ -4,6 +4,10 @@
 
 O **RASS Studio** é um projeto real criado para apresentar serviços, produtos e facilitar o contato e o agendamento com clientes. O foco do desenvolvimento foi entregar uma experiência elegante, simples e especialmente bem adaptada ao celular.
 
+## 🌐 Projeto ao vivo
+
+**[Acessar o RASS Studio](https://rass.infotech-io.com.br/)**
+
 ## ✨ Recursos
 
 - Catálogo de serviços de unhas
