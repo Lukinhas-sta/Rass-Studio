@@ -41,6 +41,10 @@ jobs:
           grep -q 'RASS_HARDENING_VERSION' assets/js/security.js
           grep -q 'RASS_ADMIN_AUTH_VERSION' assets/js/security.js
           grep -q 'cleanup_unverified_totp' assets/js/security.js
+          grep -q 'PENDING_KEY' assets/js/security.js
+          grep -q 'mfa.challenge({factorId})' assets/js/security.js
+          grep -q 'mfa.verify({factorId' assets/js/security.js
+          ! grep -q 'challengeAndVerify' assets/js/security.js
       - name: JavaScript syntax
         run: |
           set -euo pipefail
