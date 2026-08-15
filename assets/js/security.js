@@ -102,24 +102,108 @@ if(R&&R.configured?.()){
 
 if(R&&document.body.classList.contains('admin-body')&&!R.__mfaRequired){
   R.__mfaRequired=true;
-  const init0=R.initAdmin.bind(R),verify0=R.verifyMfa.bind(R);
-  function box(){const f=document.getElementById('mfaLoginForm');if(!f)return null;let b=document.getElementById('requiredMfaSetup');if(!b){b=document.createElement('div');b.id='requiredMfaSetup';b.className='hidden';b.innerHTML='<p>Para proteger o painel, conecte um aplicativo autenticador. Escaneie o QR Code e depois digite o código de 6 dígitos.</p><img id="requiredMfaQr" alt="QR Code do autenticador" style="display:block;width:200px;max-width:100%;margin:12px auto;background:#fff;padding:8px;border-radius:12px"><small>Chave manual</small><code id="requiredMfaSecret" style="display:block;word-break:break-all;margin:6px 0 14px"></code>';f.insertBefore(b,f.firstChild)}return b}
-  function show(data){const b=box();if(!b)return;b.classList.remove('hidden');const q=document.getElementById('requiredMfaQr'),s=document.getElementById('requiredMfaSecret');if(q)q.src=data?.totp?.qr_code||'';if(s)s.textContent=data?.totp?.secret||''}
+  const finishAdmin=R.initAdmin.bind(R);
+  const ACTIVITY_KEY='rass-studio-last-activity-v1';
+  let pendingFactorId='';
+
+  const touchActivity=()=>{try{localStorage.setItem(ACTIVITY_KEY,String(Date.now()))}catch{}};
+  const lockUi=()=>{document.getElementById('loginScreen')?.classList.remove('hidden');document.getElementById('adminShell')?.classList.add('hidden')};
+  function box(){const f=document.getElementById('mfaLoginForm');if(!f)return null;let b=document.getElementById('requiredMfaSetup');if(!b){b=document.createElement('div');b.id='requiredMfaSetup';b.className='hidden';b.innerHTML='<p><strong>Primeiro acesso com 2FA</strong><br>Abra o Google Authenticator, Microsoft Authenticator, Authy ou outro aplicativo compatível. Escaneie o QR Code e digite abaixo o código de 6 dígitos.</p><img id="requiredMfaQr" alt="QR Code do autenticador" style="display:block;width:200px;max-width:100%;margin:12px auto;background:#fff;padding:8px;border-radius:12px"><small>Se não conseguir escanear, use esta chave manual:</small><code id="requiredMfaSecret" style="display:block;word-break:break-all;margin:6px 0 14px"></code>';f.insertBefore(b,f.firstChild)}return b}
+  function show(data){lockUi();const b=box();if(!b)return;b.classList.remove('hidden');const q=document.getElementById('requiredMfaQr'),s=document.getElementById('requiredMfaSecret');if(q){q.src=data?.totp?.qr_code||'';q.style.height='auto';q.style.objectFit='contain'}if(s)s.textContent=data?.totp?.secret||''}
   function hide(){const b=document.getElementById('requiredMfaSetup'),q=document.getElementById('requiredMfaQr'),s=document.getElementById('requiredMfaSecret');if(q)q.removeAttribute('src');if(s)s.textContent='';b?.classList.add('hidden')}
   async function client(){await R.currentSession();if(!R.client)throw new Error('Supabase não configurado.');return R.client}
-  async function member(c){const u=(await c.auth.getUser()).data?.user;if(!u||!u.email_confirmed_at||u.is_anonymous)return false;const {data,error}=await c.from('rass_admins').select('user_id').eq('user_id',u.id).eq('active',true).maybeSingle();return !error&&!!data}
-  async function state(c){const [f,a]=await Promise.all([c.auth.mfa.listFactors(),c.auth.mfa.getAuthenticatorAssuranceLevel()]);if(f.error)throw f.error;if(a.error)throw a.error;const t=f.data?.totp||[];return{all:t,verified:t.find(x=>x.status==='verified')||null,aal:a.data}}
-  async function enroll(c,all){for(const f of all.filter(x=>x.status!=='verified')){try{await c.auth.mfa.unenroll({factorId:f.id})}catch{}}const {data,error}=await c.auth.mfa.enroll({factorType:'totp',friendlyName:'Rass Studio'});if(error)throw new Error('Não foi possível iniciar o 2FA.');show(data)}
-  R.login=async(email,password)=>{const c=await client();const {error}=await c.auth.signInWithPassword({email:String(email||'').trim().toLowerCase(),password});if(error)throw new Error('E-mail ou senha inválidos.');if(!await member(c)){await c.auth.signOut();throw new Error('Esta conta não está autorizada como administradora da Rass Studio.')}const s=await state(c);if(!s.verified)await enroll(c,s.all);else hide();return{mfaRequired:true,enrollmentRequired:!s.verified}};
-  R.initAdmin=async()=>{const c=await client(),session=(await c.auth.getSession()).data?.session;if(!session)return false;if(!await member(c))return false;const s=await state(c);if(!s.verified){await enroll(c,s.all);return{mfaRequired:true,enrollmentRequired:true}}hide();if(s.aal?.currentLevel!=='aal2')return{mfaRequired:true};return init0()};
-  R.verifyMfa=async code=>{const ok=await verify0(code);hide();return ok};
+  async function member(c){const {data:userData,error:userError}=await c.auth.getUser();const u=userData?.user;if(userError||!u||!u.email_confirmed_at||u.is_anonymous)return false;const {data,error}=await c.from('rass_admins').select('user_id').eq('user_id',u.id).eq('active',true).maybeSingle();return !error&&!!data}
+  async function state(c){const [f,a]=await Promise.all([c.auth.mfa.listFactors(),c.auth.mfa.getAuthenticatorAssuranceLevel()]);if(f.error)throw f.error;if(a.error)throw a.error;const t=f.data?.totp||[];return{all:t,verified:t.find(x=>x.status==='verified')||null,aal:a.data||{}}}
+  async function cleanupUnverified(c){
+    const {data}=await c.auth.getSession(),session=data?.session;
+    if(!session?.access_token)return false;
+    const endpoint=`${String(cfg.url||'').replace(/\/$/,'')}/functions/v1/rass-admin-mfa`;
+    try{
+      const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','apikey':String(cfg.key||''),'Authorization':`Bearer ${session.access_token}`},body:JSON.stringify({action:'cleanup_unverified_totp'}),credentials:'omit',referrerPolicy:'no-referrer'});
+      return response.ok;
+    }catch(e){console.warn('[Rass V4.13] limpeza de 2FA',e?.message||e);return false}
+  }
+  async function enroll(c){
+    lockUi();
+    await cleanupUnverified(c);
+    const friendlyName=`Rass Studio ${Date.now().toString(36).slice(-7)}`;
+    let out=await c.auth.mfa.enroll({factorType:'totp',friendlyName});
+    if(out.error&&out.error.code==='mfa_factor_name_conflict'){
+      await cleanupUnverified(c);
+      out=await c.auth.mfa.enroll({factorType:'totp',friendlyName:`Rass Studio ${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}`});
+    }
+    if(out.error||!out.data)throw new Error(out.error?.status===429?'Muitas tentativas de 2FA. Aguarde alguns segundos e tente novamente.':'Não foi possível preparar o autenticador. Atualize a página e tente novamente.');
+    pendingFactorId=out.data.id;
+    show(out.data);
+  }
+
+  R.login=async(email,password)=>{
+    const c=await client();
+    const {error}=await c.auth.signInWithPassword({email:String(email||'').trim().toLowerCase(),password});
+    if(error)throw new Error('E-mail ou senha inválidos.');
+    touchActivity();
+    if(!await member(c)){await c.auth.signOut();throw new Error('Esta conta não está autorizada como administradora da Rass Studio.')}
+    const s=await state(c);
+    if(!s.verified){await enroll(c);return{mfaRequired:true,enrollmentRequired:true}}
+    pendingFactorId='';hide();lockUi();
+    if(s.aal?.currentLevel==='aal2'){touchActivity();return finishAdmin()}
+    return{mfaRequired:true,enrollmentRequired:false};
+  };
+
+  R.initAdmin=async()=>{
+    const c=await client(),session=(await c.auth.getSession()).data?.session;
+    if(!session)return false;
+    if(!await member(c))return false;
+    const s=await state(c);
+    if(!s.verified){await enroll(c);return{mfaRequired:true,enrollmentRequired:true}}
+    pendingFactorId='';hide();
+    if(s.aal?.currentLevel!=='aal2'){lockUi();return{mfaRequired:true,enrollmentRequired:false}}
+    touchActivity();
+    return finishAdmin();
+  };
+
+  R.verifyMfa=async code=>{
+    const c=await client();
+    if(!await member(c))throw new Error('Conta não autorizada.');
+    const clean=String(code||'').replace(/\D/g,'').slice(0,6);
+    if(clean.length!==6)throw new Error('Digite o código de 6 dígitos.');
+    let factorId=pendingFactorId;
+    if(!factorId){
+      const {data,error}=await c.auth.mfa.listFactors();
+      if(error)throw error;
+      factorId=(data?.totp||[]).find(f=>f.status==='verified')?.id||'';
+    }
+    if(!factorId)throw new Error('O QR Code anterior perdeu a validade. Volte ao login para gerar um novo.');
+    const {error}=await c.auth.mfa.challengeAndVerify({factorId,code:clean});
+    if(error)throw new Error(error.status===429?'Muitas tentativas. Aguarde alguns segundos e tente novamente.':'Código inválido ou expirado. Confira o autenticador e tente novamente.');
+    pendingFactorId='';hide();touchActivity();
+    await c.auth.refreshSession().catch(()=>null);
+    touchActivity();
+    const result=await finishAdmin();
+    if(!result?.ok)throw new Error('2FA confirmado, mas não foi possível carregar o painel. Atualize a página.');
+    return true;
+  };
+
   R.disableMfa=async()=>{throw new Error('O 2FA é obrigatório para administradores da Rass Studio.')};
   const d=document.getElementById('disableMfaBtn');if(d){d.disabled=true;d.textContent='2FA obrigatório'}
-}
 
-// V4.12: o fluxo robusto do ADM substitui o enrollment legado acima antes do login do usuário.
-if(document.body.classList.contains('admin-body')){
-  import('./admin-auth-v412.js?v=4.12').catch(e=>console.warn('[Rass V4.12] autenticação ADM',e?.message||e));
+  function minutes(value){const [h,m]=String(value||'').slice(0,5).split(':').map(Number);return Number.isFinite(h)&&Number.isFinite(m)?h*60+m:NaN}
+  function overlap(aStart,aDuration,bStart,bDuration){return aStart<bStart+bDuration&&bStart<aStart+aDuration}
+  function patchAppointmentGuard(){
+    const form=document.getElementById('appointmentForm');if(!form||!D||form.dataset.v413Guard==='1')return;form.dataset.v413Guard='1';
+    form.addEventListener('submit',event=>{
+      const id=String(document.getElementById('appointmentId')?.value||''),date=String(document.getElementById('appDate')?.value||''),time=String(document.getElementById('appTime')?.value||'').slice(0,5),staffId=String(document.getElementById('appStaff')?.value||''),serviceId=String(document.getElementById('appService')?.value||'');
+      if(!date||!time||!staffId||!serviceId){event.preventDefault();event.stopImmediatePropagation();alert('Preencha serviço, profissional, data e horário antes de salvar.');return}
+      const services=D.get('services')||[],service=services.find(s=>s.id===serviceId),duration=Math.max(5,Number(service?.duration||60)),start=minutes(time);if(!Number.isFinite(start))return;
+      const active=status=>!['Cancelado','Recusado'].includes(String(status||''));
+      const conflict=(D.get('appointments')||[]).some(item=>{if(String(item.id)===id||item.date!==date||String(item.staffId||'')!==staffId||!active(item.status))return false;const otherStart=minutes(item.time);if(!Number.isFinite(otherStart))return false;const other=services.find(s=>s.id===item.serviceId),otherDuration=Math.max(5,Number(other?.duration||60));return overlap(start,duration,otherStart,otherDuration)});
+      const settings=D.get('settings')||{},blockDuration=Math.max(5,Number(settings.interval||60));
+      const blocked=(D.get('blocked')||[]).some(block=>{if(block.date!==date)return false;if(block.staffId&&String(block.staffId)!==staffId)return false;if(block.allDay)return true;const blockStart=minutes(block.time);return Number.isFinite(blockStart)&&overlap(start,duration,blockStart,blockDuration)});
+      if(conflict||blocked){event.preventDefault();event.stopImmediatePropagation();alert(conflict?'Esse período já coincide com outro atendimento dessa profissional. Escolha outro horário.':'Esse período está bloqueado na agenda. Escolha outro horário ou remova o bloqueio primeiro.')}
+    },true);
+  }
+  document.addEventListener('DOMContentLoaded',()=>setTimeout(patchAppointmentGuard,0),{once:true});
+  window.RASS_ADMIN_AUTH_VERSION='4.13.0';
 }
 
 if(typeof window.initScroll==='function'){
@@ -148,5 +232,5 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.querySelectorAll('.modal-close,.lightbox-close').forEach(b=>{if(!b.getAttribute('aria-label'))b.setAttribute('aria-label','Fechar')});
   document.querySelector('[data-gallery-prev]')?.setAttribute('aria-label','Foto anterior');document.querySelector('[data-gallery-next]')?.setAttribute('aria-label','Próxima foto');
 });
-window.RASS_HARDENING_VERSION='4.12.0';
+window.RASS_HARDENING_VERSION='4.13.0';
 })();
