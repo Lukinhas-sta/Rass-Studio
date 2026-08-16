@@ -26,7 +26,9 @@
 
   function rawSet(name,val){hydrating=true;D().set(name,val,{remote:false});hydrating=false}
   async function selectRows(name,publicMode=false){
-    if(name==='staff'&&publicMode){const {data,error}=await client.rpc('rass_get_public_staff');if(error)throw error;return (data||[]).map(r=>({id:r.id,name:r.name,specialties:r.specialties||[],active:true,phone:'',notes:''}))}
+    // A equipe pública é carregada somente pela Edge Function protegida.
+    // Evita manter um RPC legado anônimo no navegador.
+    if(name==='staff'&&publicMode)return [];
     const m=maps[name];if(!m)return null;let q=client.from(m.table).select('*');
     if(['services','jewelry','gallery'].includes(name)&&publicMode)q=q.eq('active',true);
     if(name==='promotions'&&publicMode)q=q.eq('active',true);
@@ -41,32 +43,51 @@
   async function deleteRow(name,id){if(!adminMode||!maps[name]||!id)return;const {error}=await client.from(maps[name].table).delete().eq('id',id);if(error)throw error}
   function installHooks(){D().setRemoteHooks({onSet:(name,val)=>{if(!adminMode||hydrating||!maps[name])return;syncCollection(name,val).then(()=>emit('rass-sync-ok',{name})).catch(error=>emit('rass-sync-error',{name,error}))},onRemove:(name,id)=>deleteRow(name,id).catch(error=>emit('rass-sync-error',{name,error}))})}
   async function initClient(){if(!valid())return false;if(!client){let create=window.supabase?.createClient;if(!create){const mod=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.2/+esm');create=mod.createClient}client=create(String(cfg.url).trim().replace(/\/$/,''),String(cfg.key).trim(),{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,flowType:'pkce',storageKey:'rass-studio-auth-v1'}})}return true}
-  function adminProtocolAllowed(){
-    return location.protocol==='https:' || ['localhost','127.0.0.1','::1'].includes(location.hostname);
-  }
+  async function getClientFactory(){let create=window.supabase?.createClient;if(!create){const mod=await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.2/+esm');create=mod.createClient}return create}
+  function adminProtocolAllowed(){return location.protocol==='https:' || ['localhost','127.0.0.1','::1'].includes(location.hostname)}
   function markActivity(){try{localStorage.setItem(ACTIVITY_KEY,String(Date.now()))}catch{}}
   function idleExpired(){try{const last=Number(localStorage.getItem(ACTIVITY_KEY)||0);return !!last&&(Date.now()-last>IDLE_MS)}catch{return false}}
   async function expireIdleSession(){try{if(client)await client.auth.signOut()}finally{try{localStorage.removeItem(ACTIVITY_KEY)}catch{}adminMode=false}}
-  function startIdleGuard(){
-    if(idleBound)return; idleBound=true;
-    const reset=()=>{markActivity();clearTimeout(idleTimer);idleTimer=setTimeout(async()=>{await expireIdleSession();location.reload()},IDLE_MS)};
-    ['pointerdown','keydown','touchstart'].forEach(ev=>addEventListener(ev,reset,{passive:true}));
-    document.addEventListener('visibilitychange',async()=>{if(document.hidden)return;if(idleExpired()){await expireIdleSession();location.reload();return}reset()});
-    reset();
-  }
+  function startIdleGuard(){if(idleBound)return;idleBound=true;const reset=()=>{markActivity();clearTimeout(idleTimer);idleTimer=setTimeout(async()=>{await expireIdleSession();location.reload()},IDLE_MS)};['pointerdown','keydown','touchstart'].forEach(ev=>addEventListener(ev,reset,{passive:true}));document.addEventListener('visibilitychange',async()=>{if(document.hidden)return;if(idleExpired()){await expireIdleSession();location.reload();return}reset()});reset()}
   async function initPublic(){if(!await initClient())return false;await hydratePublic();return true}
   async function currentSession(){if(!await initClient())return null;const {data}=await client.auth.getSession();return data.session||null}
   async function verifiedUser(){if(!await initClient())return null;const {data,error}=await client.auth.getUser();if(error||!data?.user)return null;return data.user}
   async function isAdmin(){if(!await initClient())return false;const {data,error}=await client.rpc('rass_is_admin');if(error)return false;return !!data}
   async function hasAdminMembership(){if(!await initClient())return false;const user=await verifiedUser();if(!user)return false;const {data,error}=await client.from('rass_admins').select('user_id').eq('user_id',user.id).eq('active',true).maybeSingle();return !error&&!!data}
   async function mfaState(){if(!await initClient())return{required:false,currentLevel:null,nextLevel:null,factor:null};const [aal,factors]=await Promise.all([client.auth.mfa.getAuthenticatorAssuranceLevel(),client.auth.mfa.listFactors()]);if(aal.error)throw aal.error;if(factors.error)throw factors.error;const verified=(factors.data?.totp||[]).find(f=>f.status==='verified')||(factors.data?.totp||[])[0]||null;return{required:aal.data?.nextLevel==='aal2'&&aal.data?.currentLevel!=='aal2',currentLevel:aal.data?.currentLevel||null,nextLevel:aal.data?.nextLevel||null,factor:verified}}
+  async function requireAal2(){const state=await mfaState();if(state.currentLevel!=='aal2')throw new Error('Confirme o código do autenticador novamente antes de alterar seu acesso.');return true}
   async function completeAdminSession(){if(!await isAdmin())throw new Error('Esta sessão não atende aos requisitos de segurança do painel.');adminMode=true;await hydrateAdmin();installHooks();startIdleGuard();return true}
   async function initAdmin(){if(!adminProtocolAllowed())throw new Error('Por segurança, o painel administrativo só funciona por HTTPS ou localhost.');if(!await initClient())return false;if(idleExpired()){await expireIdleSession();return false}const user=await verifiedUser();if(!user||!await hasAdminMembership())return false;const mfa=await mfaState();if(mfa.required)return{mfaRequired:true};await completeAdminSession();return{ok:true}}
   async function login(email,password){if(!adminProtocolAllowed())throw new Error('Por segurança, publique o site em HTTPS para entrar no painel.');if(!await initClient())throw new Error('Supabase não configurado.');const normalized=String(email||'').trim().toLowerCase();const {data,error}=await client.auth.signInWithPassword({email:normalized,password});if(error)throw new Error('E-mail ou senha inválidos.');markActivity();const user=await verifiedUser();if(!user||!await hasAdminMembership()){await client.auth.signOut();throw new Error('Esta conta não está autorizada como administradora da Rass Studio.')}const mfa=await mfaState();if(mfa.required)return{mfaRequired:true};await completeAdminSession();return{ok:true,data}}
   async function verifyMfa(code){if(!await initClient())throw new Error('Supabase não configurado.');if(!await hasAdminMembership())throw new Error('Conta não autorizada.');const factors=await client.auth.mfa.listFactors();if(factors.error)throw factors.error;const factor=(factors.data?.totp||[]).find(f=>f.status==='verified')||(factors.data?.totp||[])[0];if(!factor)throw new Error('Nenhum autenticador configurado.');const clean=String(code||'').replace(/\D/g,'').slice(0,6);if(clean.length!==6)throw new Error('Digite o código de 6 dígitos.');const {error}=await client.auth.mfa.challengeAndVerify({factorId:factor.id,code:clean});if(error)throw new Error('Código inválido ou expirado.');await completeAdminSession();return true}
   async function getAccessProfile(){if(!await initClient())return null;const user=await verifiedUser();if(!user)return null;const {data,error}=await client.from('rass_admins').select('name,active').eq('user_id',user.id).maybeSingle();if(error)throw error;return {email:user.email||'',name:data?.name||'',active:data?.active!==false}}
-  async function updateEmail(newEmail,currentPassword){if(!adminMode)throw new Error('Sessão administrativa inválida.');const email=String(newEmail||'').trim().toLowerCase();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw new Error('Digite um e-mail válido.');if(!currentPassword)throw new Error('Digite sua senha atual para confirmar.');const user=await verifiedUser();if(!user?.email)throw new Error('Sessão inválida.');const check=await client.auth.signInWithPassword({email:user.email,password:currentPassword});if(check.error)throw new Error('Senha atual incorreta.');const {data,error}=await client.auth.updateUser({email});if(error)throw error;return data}
-  async function updatePassword(currentPassword,newPassword){if(!adminMode)throw new Error('Sessão administrativa inválida.');if(!currentPassword)throw new Error('Digite a senha atual.');const p=String(newPassword||'');if(p.length<12||!/[a-z]/.test(p)||!/[A-Z]/.test(p)||!/\d/.test(p)||!/[!@#$%^&*()_+\-=\[\]{};':"|<>?,./`~]/.test(p))throw new Error('A nova senha precisa ter 12+ caracteres, maiúscula, minúscula, número e símbolo.');const {error}=await client.auth.updateUser({current_password:currentPassword,password:p});if(error)throw error;await client.auth.signOut({scope:'global'});adminMode=false;return true}
+  async function updateEmail(newEmail,currentPassword){
+    if(!adminMode)throw new Error('Sessão administrativa inválida.');
+    const email=String(newEmail||'').trim().toLowerCase();
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))throw new Error('Digite um e-mail válido.');
+    if(!currentPassword)throw new Error('Digite sua senha atual para confirmar.');
+    await requireAal2();
+    const user=await verifiedUser();if(!user?.email)throw new Error('Sessão inválida.');
+    // Confere a senha em um cliente temporário para não rebaixar a sessão AAL2 do painel.
+    const create=await getClientFactory();
+    const verifier=create(String(cfg.url).trim().replace(/\/$/,''),String(cfg.key).trim(),{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false,storageKey:`rass-verify-${Date.now()}`}});
+    const check=await verifier.auth.signInWithPassword({email:user.email,password:currentPassword});
+    if(check.error)throw new Error('Senha atual incorreta.');
+    try{await verifier.auth.signOut({scope:'local'})}catch{}
+    const {data,error}=await client.auth.updateUser({email});
+    if(error)throw error;
+    return data;
+  }
+  async function updatePassword(currentPassword,newPassword){
+    if(!adminMode)throw new Error('Sessão administrativa inválida.');
+    if(!currentPassword)throw new Error('Digite a senha atual.');
+    const p=String(newPassword||'');
+    if(p.length<12||!/[a-z]/.test(p)||!/[A-Z]/.test(p)||!/\d/.test(p)||!/[!@#$%^&*()_+\-=\[\]{};':"|<>?,./`~]/.test(p))throw new Error('A nova senha precisa ter 12+ caracteres, maiúscula, minúscula, número e símbolo.');
+    await requireAal2();
+    const {error}=await client.auth.updateUser({currentPassword,password:p});
+    if(error)throw error;
+    await client.auth.signOut({scope:'global'});adminMode=false;return true
+  }
   async function getMfaStatus(){if(!adminMode)throw new Error('Sessão administrativa inválida.');const state=await mfaState();const factors=await client.auth.mfa.listFactors();if(factors.error)throw factors.error;const verified=(factors.data?.totp||[]).filter(f=>f.status==='verified');return{enabled:verified.length>0,aal:state.currentLevel,factors:verified}}
   async function enrollMfa(){if(!adminMode)throw new Error('Sessão administrativa inválida.');const existing=await getMfaStatus();if(existing.enabled)throw new Error('A verificação em duas etapas já está ativa.');const {data,error}=await client.auth.mfa.enroll({factorType:'totp',friendlyName:'Rass Studio'});if(error)throw error;return{id:data.id,qr:data.totp?.qr_code||'',secret:data.totp?.secret||''}}
   async function verifyMfaEnrollment(factorId,code){if(!adminMode)throw new Error('Sessão administrativa inválida.');const clean=String(code||'').replace(/\D/g,'').slice(0,6);if(clean.length!==6)throw new Error('Digite o código de 6 dígitos.');const {error}=await client.auth.mfa.challengeAndVerify({factorId,code:clean});if(error)throw new Error('Código inválido. Confira o aplicativo autenticador.');return true}
@@ -84,7 +105,7 @@
     if(!allowedTypes.has(file.type)||!['jpg','jpeg','png','webp'].includes(ext))throw new Error('Use somente JPG, PNG ou WEBP.');
     if(file.size>5*1024*1024)throw new Error('A imagem deve ter no máximo 5 MB.');
     const path=`${folder}/${Date.now()}-${crypto.getRandomValues(new Uint32Array(1))[0].toString(36)}.${ext}`;
-    const {error}=await client.storage.from('rass-media').upload(path,file,{upsert:false,cacheControl:'3600',contentType:file.type});if(error)throw error;const {data}=client.storage.from('rass-media').getPublicUrl(path);return data.publicUrl
+    const {error}=await client.storage.from('rass-media').upload(path,file,{upsert:false,cacheControl:'31536000',contentType:file.type});if(error)throw error;const {data}=client.storage.from('rass-media').getPublicUrl(path);return data.publicUrl
   }
   window.RassRemote={configured:valid,initPublic,initAdmin,login,verifyMfa,getAccessProfile,updateEmail,updatePassword,getMfaStatus,enrollMfa,verifyMfaEnrollment,disableMfa,logout,currentSession,isAdmin,unavailable,createAppointment,createQuote,uploadImage,get client(){return client},get adminMode(){return adminMode}};
 })();
