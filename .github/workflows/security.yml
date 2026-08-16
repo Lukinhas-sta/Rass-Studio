@@ -32,6 +32,7 @@ jobs:
           test -f SECURITY.md
           test -f assets/js/security.js
           test -f assets/js/public-api.js
+          test -f assets/js/runtime-v415.js
           test ! -f assets/js/admin-auth-v412.js
           ! grep -RIn --exclude-dir=.git --exclude='security.yml' 'admin-auth-v412' assets index.html admin.html
           grep -q 'Content-Security-Policy' index.html
@@ -45,6 +46,13 @@ jobs:
           grep -q 'mfa.challenge({factorId})' assets/js/security.js
           grep -q 'mfa.verify({factorId' assets/js/security.js
           ! grep -q 'challengeAndVerify' assets/js/security.js
+          grep -q "RASS_RUNTIME_VERSION" assets/js/runtime-v415.js
+          grep -q "America/Sao_Paulo" assets/js/runtime-v415.js
+          grep -q 'runtime-v415.js?v=4.15' index.html
+          grep -q 'runtime-v415.js?v=4.15' admin.html
+          grep -q 'security.js?v=4.15' index.html
+          grep -q 'security.js?v=4.15' admin.html
+          ! grep -Eq '\?v=4\.(8|9|10|11|12|13|14)([^0-9]|$)' index.html admin.html
       - name: JavaScript syntax
         run: |
           set -euo pipefail
@@ -53,7 +61,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import pathlib,re,sys,xml.etree.ElementTree as ET
-          missing=[]; insecure=[]; duplicate_ids=[]
+          missing=[]; insecure=[]; duplicate_ids=[]; trailing=[]
           allowed_http=(
               'http://localhost',
               'http://127.0.0.1',
@@ -77,13 +85,16 @@ jobs:
               for ident in ids:
                   if ident in seen: duplicate_ids.append(f'{html}: {ident}')
                   seen.add(ident)
+              match=re.search(r'</html>(.*)\Z',text,re.I|re.S)
+              if match and match.group(1).strip(): trailing.append(f'{html}: conteúdo após </html>')
           try: ET.parse('sitemap.xml')
           except Exception as e:
               print('Sitemap inválido:',e); sys.exit(1)
           if insecure: print('HTTP inseguro:\n'+'\n'.join(insecure))
           if missing: print('Arquivos ausentes:\n'+'\n'.join(missing))
           if duplicate_ids: print('IDs HTML duplicados:\n'+'\n'.join(duplicate_ids))
-          if insecure or missing or duplicate_ids: sys.exit(1)
+          if trailing: print('HTML com conteúdo residual:\n'+'\n'.join(trailing))
+          if insecure or missing or duplicate_ids or trailing: sys.exit(1)
           PY
       - name: File size
         run: |
