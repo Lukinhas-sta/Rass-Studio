@@ -290,3 +290,7 @@ window.RASS_SUPABASE_CONFIG = {
   document.addEventListener('rass-booking-saved-v415', event => showBookingSaved(event.detail));
   window.RASS_STABILITY_VERSION = '4.15.0';
 })();
+
+if (document.body.classList.contains('admin-body')) {
+  import('./assets/js/trash-v415.js?v=4.15').catch(error => console.warn('[Rass V4.15] lixeira persistente:', error?.message || error));
+}
