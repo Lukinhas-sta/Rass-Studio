@@ -48,6 +48,12 @@ jobs:
           ! grep -q 'challengeAndVerify' assets/js/security.js
           grep -q "RASS_RUNTIME_VERSION" assets/js/runtime-v415.js
           grep -q "America/Sao_Paulo" assets/js/runtime-v415.js
+          grep -q 'currentPassword,password:p' assets/js/remote.js
+          grep -q "await requireAal2()" assets/js/remote.js
+          ! grep -q "client.rpc('rass_get_public_staff')" assets/js/remote.js
+          grep -q 'bookingSavedWhatsappV415' assets/js/supabase-config.js
+          grep -q 'rass-sync-ok' assets/js/supabase-config.js
+          ! grep -q 'setTimeout(() => clientWhatsapp(app, true)' assets/js/supabase-config.js
           grep -q 'runtime-v415.js?v=4.15' index.html
           grep -q 'runtime-v415.js?v=4.15' admin.html
           grep -q 'security.js?v=4.15' index.html
