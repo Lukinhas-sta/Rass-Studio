@@ -6,9 +6,9 @@ window.RASS_SUPABASE_CONFIG = {
 };
 
 /*
- * Rass Studio V4.11 — estabilização de produção.
+ * Rass Studio V4.15 — estabilização de produção.
  * Mantém o design existente e corrige interação mobile, carregamento progressivo,
- * confirmação de agendamento e layout do 2FA no painel.
+ * confirmação de agendamento, WhatsApp e layout do 2FA no painel.
  */
 (() => {
   'use strict';
@@ -18,11 +18,33 @@ window.RASS_SUPABASE_CONFIG = {
     const p = String(iso || '').slice(0, 10).split('-');
     return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : String(iso || '');
   };
+  const html = s => String(s ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#039;','"':'&quot;'}[c]));
+
+  function safeOpen(url) {
+    try {
+      const popup = window.open(url, '_blank', 'noopener');
+      if (popup) return true;
+    } catch (_) {}
+    try {
+      window.location.assign(url);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function studioWhatsapp(message) {
+    const settings = window.RassData?.get('settings') || {};
+    let p = digits(settings.whatsapp || '5515991799866');
+    if (!p) return false;
+    if (!p.startsWith('55')) p = `55${p}`;
+    return safeOpen(`https://wa.me/${p}?text=${encodeURIComponent(message)}`);
+  }
 
   function injectStabilityCss() {
-    if (document.getElementById('rass-v411-stability-css')) return;
+    if (document.getElementById('rass-v415-stability-css')) return;
     const style = document.createElement('style');
-    style.id = 'rass-v411-stability-css';
+    style.id = 'rass-v415-stability-css';
     style.textContent = `
       .booking-card::before{pointer-events:none!important}
       .booking-card .booking-step,.booking-card .mobile-booking-progress,.booking-card .mobile-booking-nav{position:relative;z-index:1}
@@ -45,6 +67,7 @@ window.RASS_SUPABASE_CONFIG = {
       .booking-success-v411.show{display:block}
       .booking-success-v411 strong{display:block;font-size:.9rem;margin-bottom:4px}
       .booking-success-v411 span{display:block;font-size:.76rem;color:#626262}
+      .booking-success-v411 button{margin-top:10px;width:100%;border:0;border-radius:999px;padding:11px 14px;background:#090909;color:#fff;font:inherit;font-weight:700;cursor:pointer}
       #requiredMfaSetup{position:relative;z-index:3;margin:0 0 18px;padding:14px;border:1px solid #2e2e2e;border-radius:16px;background:#0d0d0d;overflow:hidden}
       #requiredMfaSetup p{margin:0 0 12px;line-height:1.55;font-size:.88rem}
       #requiredMfaQr{display:block!important;width:min(220px,68vw)!important;height:auto!important;aspect-ratio:1/1!important;object-fit:contain!important;margin:12px auto!important;background:#fff!important;padding:8px!important;border-radius:12px!important}
@@ -66,24 +89,29 @@ window.RASS_SUPABASE_CONFIG = {
     document.head.appendChild(style);
   }
 
+  function installReliableWhatsapp() {
+    if (typeof window.openWhatsapp !== 'function' || window.__rassV415Whatsapp) return;
+    window.__rassV415Whatsapp = true;
+    window.openWhatsapp = message => studioWhatsapp(String(message || ''));
+  }
+
   function makePublicHydrationProgressive() {
     const remote = window.RassRemote;
-    if (!remote?.configured?.() || remote.__v411ProgressivePublic) return;
-    remote.__v411ProgressivePublic = true;
+    if (!remote?.configured?.() || remote.__v415ProgressivePublic) return;
+    remote.__v415ProgressivePublic = true;
     const hydrate = remote.initPublic.bind(remote);
     remote.initPublic = async () => {
-      if (!remote.__v411HydrationPromise) {
-        remote.__v411HydrationPromise = hydrate()
+      if (!remote.__v415HydrationPromise) {
+        remote.__v415HydrationPromise = hydrate()
           .then(result => {
-            document.dispatchEvent(new CustomEvent('rass-public-data-ready-v411'));
+            document.dispatchEvent(new CustomEvent('rass-public-data-ready-v415'));
             return result;
           })
           .catch(error => {
-            console.warn('[Rass V4.11] sincronização pública em segundo plano:', error?.message || error);
+            console.warn('[Rass V4.15] sincronização pública em segundo plano:', error?.message || error);
             return false;
           });
       }
-      // O primeiro desenho usa os dados locais imediatamente; o Supabase atualiza depois.
       return true;
     };
   }
@@ -108,23 +136,20 @@ window.RASS_SUPABASE_CONFIG = {
       if (typeof renderTimes === 'function' && document.getElementById('bookingDate')?.value && typeof selectedService !== 'undefined' && selectedService) renderTimes();
       if (typeof observe === 'function') observe();
     } catch (error) {
-      console.warn('[Rass V4.11] atualização visual:', error?.message || error);
+      console.warn('[Rass V4.15] atualização visual:', error?.message || error);
     }
   }
 
   function hardenBookingSelection() {
     const form = document.getElementById('bookingForm');
-    if (!form || form.dataset.v411Selection === '1') return;
-    form.dataset.v411Selection = '1';
+    if (!form || form.dataset.v415Selection === '1') return;
+    form.dataset.v415Selection = '1';
 
     form.addEventListener('click', event => {
       const button = event.target.closest?.('[data-bservice]');
       if (!button || !form.contains(button)) return;
       const id = String(button.dataset.bservice || '');
       if (!id) return;
-
-      // Executa depois do onclick original para garantir que o estado não seja perdido
-      // mesmo em navegadores Android que reconstruam o botão durante o toque.
       setTimeout(() => {
         try {
           if (typeof selectedService !== 'undefined') selectedService = id;
@@ -136,7 +161,7 @@ window.RASS_SUPABASE_CONFIG = {
           if (typeof renderBookingStaff === 'function') renderBookingStaff();
           if (document.getElementById('bookingDate')?.value && typeof renderTimes === 'function') renderTimes();
         } catch (error) {
-          console.warn('[Rass V4.11] seleção de serviço:', error?.message || error);
+          console.warn('[Rass V4.15] seleção de serviço:', error?.message || error);
         }
       }, 0);
     }, true);
@@ -144,12 +169,12 @@ window.RASS_SUPABASE_CONFIG = {
 
   function addBookingSavedFeedback() {
     const remote = window.RassRemote;
-    if (!remote?.createAppointment || remote.__v411BookingFeedback) return;
-    remote.__v411BookingFeedback = true;
+    if (!remote?.createAppointment || remote.__v415BookingFeedback) return;
+    remote.__v415BookingFeedback = true;
     const create = remote.createAppointment.bind(remote);
     remote.createAppointment = async app => {
       const result = await create(app);
-      document.dispatchEvent(new CustomEvent('rass-booking-saved-v411', { detail: { app, result } }));
+      document.dispatchEvent(new CustomEvent('rass-booking-saved-v415', { detail: { app, result } }));
       return result;
     };
 
@@ -166,7 +191,8 @@ window.RASS_SUPABASE_CONFIG = {
     const app = detail?.app || {};
     const card = document.getElementById('bookingSuccessV411');
     if (!card) return;
-    card.innerHTML = `<strong>Pedido salvo na agenda ✓</strong><span>${String(app.service || 'Serviço')} · ${brDate(app.date)} às ${String(app.time || '')}. O pedido ficou como pendente até a confirmação do Studio. O WhatsApp será aberto com os dados para você enviar ao Studio.</span>`;
+    card.innerHTML = `<strong>Pedido salvo na agenda ✓</strong><span>${html(app.service || 'Serviço')} · ${html(brDate(app.date))} às ${html(app.time || '')}. O pedido ficou como pendente até a confirmação do Studio.</span><button type="button" id="bookingSavedWhatsappV415">Abrir WhatsApp com os dados</button>`;
+    card.querySelector('#bookingSavedWhatsappV415')?.addEventListener('click', () => studioWhatsapp(`Olá! Solicitei um horário pelo site da Rass Studio.\n\nNome: ${app.name || ''}\nÁrea: ${app.type || ''}\nServiço: ${app.service || ''}\nProfissional: ${app.staff || ''}\nData: ${brDate(app.date)}\nHorário: ${app.time || ''}\nObservação: ${app.notes || 'Nenhuma'}`));
     card.classList.add('show');
     card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
@@ -178,29 +204,42 @@ window.RASS_SUPABASE_CONFIG = {
     const message = confirmed
       ? `Olá, ${app.name || 'tudo bem'}! Seu horário na Rass Studio foi confirmado.\n\nServiço: ${app.service || '-'}\nData: ${brDate(app.date)}\nHorário: ${app.time || '-'}\nProfissional: ${app.staff || '-'}\n\nSe precisar alterar o horário, responda por aqui. 🤍`
       : `Olá, ${app.name || 'tudo bem'}! Estou falando sobre seu agendamento na Rass Studio.\n\nServiço: ${app.service || '-'}\nData: ${brDate(app.date)}\nHorário: ${app.time || '-'}`;
-    window.open(`https://wa.me/${p}?text=${encodeURIComponent(message)}`, '_blank', 'noopener');
-    return true;
+    return safeOpen(`https://wa.me/${p}?text=${encodeURIComponent(message)}`);
   }
 
   function improveAdminAppointments() {
     if (!document.body.classList.contains('admin-body') || !window.RassData) return;
 
-    if (typeof updateAppointmentStatus === 'function' && !window.__rassV411StatusWrapped) {
-      window.__rassV411StatusWrapped = true;
+    if (typeof updateAppointmentStatus === 'function' && !window.__rassV415StatusWrapped) {
+      window.__rassV415StatusWrapped = true;
       const originalUpdate = updateAppointmentStatus;
       updateAppointmentStatus = function(id, status) {
         const app = window.RassData.get('appointments').find(a => a.id === id);
         const previous = app?.status;
-        const result = originalUpdate(id, status);
-        if (status === 'Confirmado' && previous !== 'Confirmado' && app?.phone) {
-          setTimeout(() => clientWhatsapp(app, true), 80);
-        }
-        return result;
+        let done = false;
+        const cleanup = () => {
+          document.removeEventListener('rass-sync-ok', ok);
+          document.removeEventListener('rass-sync-error', fail);
+        };
+        const ok = event => {
+          if (done || event.detail?.name !== 'appointments') return;
+          done = true; cleanup();
+          if (status === 'Confirmado' && previous !== 'Confirmado' && typeof window.toast === 'function') window.toast('Agendamento confirmado. Use o botão WhatsApp para enviar a confirmação ao cliente.');
+        };
+        const fail = event => {
+          if (done || event.detail?.name !== 'appointments') return;
+          done = true; cleanup();
+          if (typeof window.toast === 'function') window.toast('Não foi possível salvar a alteração no servidor. Atualize a agenda antes de confirmar com o cliente.');
+        };
+        document.addEventListener('rass-sync-ok', ok);
+        document.addEventListener('rass-sync-error', fail);
+        setTimeout(() => { if (!done) cleanup(); }, 12000);
+        return originalUpdate(id, status);
       };
     }
 
-    if (typeof renderAppointments === 'function' && !window.__rassV411AppointmentsWrapped) {
-      window.__rassV411AppointmentsWrapped = true;
+    if (typeof renderAppointments === 'function' && !window.__rassV415AppointmentsWrapped) {
+      window.__rassV415AppointmentsWrapped = true;
       const originalRender = renderAppointments;
       renderAppointments = function() {
         const result = originalRender();
@@ -214,7 +253,7 @@ window.RASS_SUPABASE_CONFIG = {
           const button = document.createElement('button');
           button.type = 'button';
           button.dataset.clientWhatsapp = id;
-          button.textContent = 'WhatsApp';
+          button.textContent = app.status === 'Confirmado' ? 'WhatsApp confirmação' : 'WhatsApp';
           button.addEventListener('click', () => clientWhatsapp(app, app.status === 'Confirmado'));
           actions.prepend(button);
         });
@@ -236,6 +275,7 @@ window.RASS_SUPABASE_CONFIG = {
 
   document.addEventListener('DOMContentLoaded', () => {
     injectStabilityCss();
+    installReliableWhatsapp();
     makePublicHydrationProgressive();
     hardenBookingSelection();
     addBookingSavedFeedback();
@@ -246,7 +286,7 @@ window.RASS_SUPABASE_CONFIG = {
     observer.observe(document.body, { childList: true, subtree: true });
   }, { once: true });
 
-  document.addEventListener('rass-public-data-ready-v411', rerenderPublicAfterHydration);
-  document.addEventListener('rass-booking-saved-v411', event => showBookingSaved(event.detail));
-  window.RASS_STABILITY_VERSION = '4.11.0';
+  document.addEventListener('rass-public-data-ready-v415', rerenderPublicAfterHydration);
+  document.addEventListener('rass-booking-saved-v415', event => showBookingSaved(event.detail));
+  window.RASS_STABILITY_VERSION = '4.15.0';
 })();
