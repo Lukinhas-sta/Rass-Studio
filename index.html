@@ -9,14 +9,15 @@
   <meta property="og:type" content="website" />
   <meta property="og:title" content="Rass Studio | Piercing • Nail Design • Joias" />
   <meta property="og:description" content="Seu estilo em cada detalhe. Piercing, Nail Design, joias e agendamentos." />
-  <meta property="og:image" content="assets/images/helix.jpg" />
+  <meta property="og:image" content="https://rass.infotech-io.com.br/assets/images/helix.jpg" />
   <meta name="twitter:card" content="summary_large_image" />
   <title>Rass Studio | Piercing • Nail Design • Joias</title>
   <link rel="icon" href="assets/images/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="assets/css/style.css" />
-  <link rel="stylesheet" href="assets/css/v4.css" />
-  <link rel="stylesheet" href="assets/css/production.css?v=4.8" />
-<script src="assets/js/security.js?v=4.8" defer></script></head>
+  <link rel="preload" as="image" href="assets/images/helix.jpg" />
+  <link rel="stylesheet" href="assets/css/style.css?v=4.15" />
+  <link rel="stylesheet" href="assets/css/v4.css?v=4.15" />
+  <link rel="stylesheet" href="assets/css/production.css?v=4.15" />
+<script src="assets/js/security.js?v=4.15" defer></script></head>
 <body>
   <div class="page-loader" id="pageLoader" aria-hidden="true"><div class="loader-mark">R</div><div class="loader-name">RASS STUDIO</div><div class="loader-line"><span></span></div></div>
   <div class="scroll-progress" id="scrollProgress"></div><div class="cursor-glow" id="cursorGlow"></div><div class="noise"></div>
@@ -43,8 +44,8 @@
           <div class="hero-trust hero-animate"><div class="trust-item"><span class="trust-icon">◇</span><div><strong>Piercing</strong><small>Estilo e cuidado</small></div></div><div class="trust-item"><span class="trust-icon">✦</span><div><strong>Nail Design</strong><small>Detalhes personalizados</small></div></div><div class="trust-item"><span class="trust-icon">○</span><div><strong>Agenda</strong><small>Horário online</small></div></div></div>
         </div>
         <div class="hero-media hero-duo" id="heroMedia">
-          <div class="hero-frame hero-main-photo" data-parallax="0.035"><img id="heroPrimary" src="assets/images/helix.jpg" alt="Trabalho de piercing"><div class="photo-shade"></div><div class="photo-caption"><span>BODY PIERCING</span><strong>Detalhes que expressam você</strong></div></div>
-          <div class="hero-frame hero-side-photo hero-nails-photo" data-parallax="-0.025"><img id="heroSecondary" src="assets/images/nails-fibra.jpg" alt="Nail design"><div class="mini-tag">NAIL DESIGN</div></div>
+          <div class="hero-frame hero-main-photo" data-parallax="0.035"><img id="heroPrimary" src="assets/images/helix.jpg" alt="Trabalho de piercing" fetchpriority="high" decoding="async"><div class="photo-shade"></div><div class="photo-caption"><span>BODY PIERCING</span><strong>Detalhes que expressam você</strong></div></div>
+          <div class="hero-frame hero-side-photo hero-nails-photo" data-parallax="-0.025"><img id="heroSecondary" src="assets/images/nails-fibra.jpg" alt="Nail design" decoding="async"><div class="mini-tag">NAIL DESIGN</div></div>
           <div class="hero-mini-card glass-card" data-parallax="0.055"><span class="mini-eyebrow">AGENDE ONLINE</span><strong>Escolha a área,<br>serviço, dia e horário.</strong><a href="#agenda">Começar <span>↗</span></a></div>
           <div class="hero-stamp spin-slow"><span>RASS · STUDIO · BEAUTY ·</span><strong>R</strong></div>
           <a class="instagram-pill magnetic" href="https://www.instagram.com/rassstudio_" target="_blank" rel="noopener">@rassstudio_ <span>↗</span></a>
@@ -57,8 +58,8 @@
     <section class="choice-section section-white" id="escolha">
       <div class="section-head reveal"><div><div class="section-label">RASS STUDIO</div><h2>O que você procura<br><em>hoje?</em></h2></div><p>Dois universos, a mesma identidade. Escolha sua experiência e veja apenas o que combina com o que você quer fazer.</p></div>
       <div class="choice-grid">
-        <button class="choice-card piercing-choice reveal tilt-card" data-service-type="Piercing"><img src="assets/images/tragus.jpg" alt="Piercing"><div class="choice-overlay"></div><div class="choice-copy"><small>01 · BODY PIERCING</small><h3>Piercing</h3><p>Perfurações, joias e composições.</p><span>Explorar serviços ↗</span></div></button>
-        <button class="choice-card nails-choice reveal delay-1 tilt-card" data-service-type="Unhas"><img src="assets/images/nails-fibra.jpg" alt="Nail design"><div class="choice-overlay"></div><div class="choice-copy"><small>02 · NAIL DESIGN</small><h3>Nails</h3><p>Alongamento, molde F1 e banho em gel.</p><span>Explorar serviços ↗</span></div></button>
+        <button class="choice-card piercing-choice reveal tilt-card" data-service-type="Piercing"><img src="assets/images/tragus.jpg" alt="Piercing" loading="lazy" decoding="async"><div class="choice-overlay"></div><div class="choice-copy"><small>01 · BODY PIERCING</small><h3>Piercing</h3><p>Perfurações, joias e composições.</p><span>Explorar serviços ↗</span></div></button>
+        <button class="choice-card nails-choice reveal delay-1 tilt-card" data-service-type="Unhas"><img src="assets/images/nails-fibra.jpg" alt="Nail design" loading="lazy" decoding="async"><div class="choice-overlay"></div><div class="choice-copy"><small>02 · NAIL DESIGN</small><h3>Nails</h3><p>Alongamento, molde F1 e banho em gel.</p><span>Explorar serviços ↗</span></div></button>
       </div>
     </section>
 
@@ -70,7 +71,7 @@
     </section>
 
     <section class="experience section-black v4-experience">
-      <div class="experience-visual reveal"><img class="experience-main" src="assets/images/procedimento.jpg" alt="Procedimento de piercing"><img class="experience-float" src="assets/images/nails-gel.jpg" alt="Procedimento de unhas"></div>
+      <div class="experience-visual reveal"><img class="experience-main" src="assets/images/procedimento.jpg" alt="Procedimento de piercing" loading="lazy" decoding="async"><img class="experience-float" src="assets/images/nails-gel.jpg" alt="Procedimento de unhas" loading="lazy" decoding="async"></div>
       <div class="experience-copy reveal delay-1"><div class="section-label light">A EXPERIÊNCIA RASS</div><h2>Um Studio para cuidar <em>dos seus detalhes.</em></h2><p>Piercing e nail design com atendimento individual, organização e uma experiência pensada do primeiro contato até a finalização.</p><div class="experience-points"><article><span>01</span><div><h3>Escolha sua experiência</h3><p>Piercing ou unhas: o site mostra somente os serviços da área escolhida.</p></div></article><article><span>02</span><div><h3>Veja valores e horários</h3><p>Consulte serviços, disponibilidade e opções antes de chamar.</p></div></article><article><span>03</span><div><h3>Agende em poucos passos</h3><p>Selecione serviço, data e horário; o pedido já entra no painel administrativo.</p></div></article></div><a href="#agenda" class="btn btn-outline btn-large magnetic">Agendar agora <span>→</span></a></div>
     </section>
 
@@ -129,8 +130,6 @@
   <div class="gallery-lightbox" id="galleryLightbox" aria-hidden="true"><button class="lightbox-close" data-gallery-close>×</button><button class="lightbox-nav prev" data-gallery-prev>←</button><div class="lightbox-stage"><img id="lightboxImage" alt=""><div class="lightbox-meta"><span id="lightboxCount"></span><strong id="lightboxCaption"></strong></div></div><button class="lightbox-nav next" data-gallery-next>→</button></div>
   <div class="toast" id="toast"></div>
 
-  <script src="assets/js/supabase-config.js"></script><script src="assets/js/data.js"></script><script src="assets/js/remote.js"></script><script src="assets/js/app.js?v=4.8"></script>
+  <script src="assets/js/supabase-config.js?v=4.15"></script><script src="assets/js/data.js?v=4.15"></script><script src="assets/js/remote.js?v=4.15"></script><script src="assets/js/app.js?v=4.15"></script><script src="assets/js/runtime-v415.js?v=4.15"></script>
 </body>
 </html>
-
-.
