@@ -33,6 +33,8 @@ jobs:
           test -f assets/js/security.js
           test -f assets/js/public-api.js
           test -f assets/js/runtime-v415.js
+          test -f assets/js/trash-v415.js
+          test -f assets/js/assets/js/trash-v415.js
           test ! -f assets/js/admin-auth-v412.js
           ! grep -RIn --exclude-dir=.git --exclude='security.yml' 'admin-auth-v412' assets index.html admin.html
           grep -q 'Content-Security-Policy' index.html
@@ -54,6 +56,9 @@ jobs:
           grep -q 'bookingSavedWhatsappV415' assets/js/supabase-config.js
           grep -q 'rass-sync-ok' assets/js/supabase-config.js
           ! grep -q 'setTimeout(() => clientWhatsapp(app, true)' assets/js/supabase-config.js
+          grep -q 'trash-v415.js?v=4.15' assets/js/supabase-config.js
+          grep -q 'RASS_TRASH_VERSION' assets/js/trash-v415.js
+          grep -q "const TABLE = 'rass_trash'" assets/js/trash-v415.js
           grep -q 'runtime-v415.js?v=4.15' index.html
           grep -q 'runtime-v415.js?v=4.15' admin.html
           grep -q 'security.js?v=4.15' index.html
